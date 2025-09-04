@@ -1,51 +1,82 @@
 import "./App.css";
 import io from "socket.io-client";
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
+import Login from "./components/Login";
+import ChatRoom from "./components/ChatRoom";
 
-const socket = io.connect("http://localhost:3001");
+const socket = io.connect("http://localhost:3005");
 
 function App() {
-  //Room State
-  const [room, setRoom] = useState("");
+  const [isConnected, setIsConnected] = useState(false);
+  const [currentUser, setCurrentUser] = useState({ username: "", room: "" });
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Messages States
-  const [message, setMessage] = useState("");
-  const [messageReceived, setMessageReceived] = useState("");
-
-  const joinRoom = () => {
-    if (room !== "") {
-      socket.emit("join_room", room);
-    }
-  };
-
-  const sendMessage = () => {
-    socket.emit("send_message", { message, room });
-  };
-
+  // Vérifier localStorage au démarrage
   useEffect(() => {
-    socket.on("receive_message", (data) => {
-      setMessageReceived(data.message);
-    });
-  }, [socket]);
+    const savedUser = localStorage.getItem('chatUser');
+    if (savedUser) {
+      try {
+        const userData = JSON.parse(savedUser);
+        if (userData.username && userData.room) {
+          setCurrentUser(userData);
+          socket.emit("join_room", userData.room);
+          setIsConnected(true);
+        }
+      } catch (error) {
+        console.error('Erreur lors de la récupération des données utilisateur:', error);
+        localStorage.removeItem('chatUser');
+      }
+    }
+    setIsLoading(false);
+  }, []);
+
+  const handleJoinRoom = ({ room, username }) => {
+    const userData = { username, room };
+    
+    // Sauvegarder dans localStorage
+    localStorage.setItem('chatUser', JSON.stringify(userData));
+    
+    socket.emit("join_room", room);
+    setCurrentUser(userData);
+    setIsConnected(true);
+  };
+
+  const handleLeaveRoom = () => {
+    // Nettoyer localStorage des données utilisateur
+    localStorage.removeItem('chatUser');
+    
+    // Nettoyer les messages de la room actuelle
+    if (currentUser.room) {
+      localStorage.removeItem(`chatMessages_${currentUser.room}`);
+    }
+    
+    setIsConnected(false);
+    setCurrentUser({ username: "", room: "" });
+  };
+
+  // Afficher un loading pendant la vérification localStorage
+  if (isLoading) {
+    return (
+      <div className="app">
+        <div className="loading-container">
+          <div className="loading-spinner">💬</div>
+          <p>Chargement...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isConnected) {
+    return <Login onJoinRoom={handleJoinRoom} />;
+  }
+
   return (
-    <div className="App">
-      <input
-        placeholder="Room Number..."
-        onChange={(event) => {
-          setRoom(event.target.value);
-        }}
-      />
-      <button onClick={joinRoom}> Join Room</button>
-      <input
-        placeholder="Message..."
-        onChange={(event) => {
-          setMessage(event.target.value);
-        }}
-      />
-      <button onClick={sendMessage}> Send Message</button>
-      <h1> Message:</h1>
-      {messageReceived}
-    </div>
+    <ChatRoom 
+      socket={socket}
+      username={currentUser.username}
+      room={currentUser.room}
+      onLeaveRoom={handleLeaveRoom}
+    />
   );
 }
 
